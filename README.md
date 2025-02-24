@@ -1,6 +1,6 @@
 # 📄 dumpany
 
-This tool helps you download all available PDF documents for a target company from Companies House, the UK's official company registry. It creates a 'dump' of company documents on your computer for you to browse offline, or upload to other tools like [Google's NotebookLM](https://notebooklm.google.com/).
+This OSINT tool helps you download all available PDF documents for a target company from Companies House, the UK's official company registry. It creates a 'dump' of company documents on your computer for you to browse offline, or upload to other tools like [Google's NotebookLM](https://notebooklm.google.com/). Feel free to contact me on Signal via the id pearswick.01 for any development suggestions.
 
 ![dumpany screenshot](screenshots/dumpany_screenshot.png)
 
