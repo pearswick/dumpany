@@ -13,6 +13,9 @@ When you run dumpany it:
 4. Creates a folder named after each company within the 'dump' folder
 5. Downloads all available PDF documents for every company
 
+**Warning!**
+The Comapnies House API has a rate limit of 600 requests per five minutes. dumpany will pause when it hits that threshold to avoid getting into trouble. Remember to wait five minutes between running dumpany again if you've recently closed it or hit the limit. The latest version will skip over any documents that have already been downloaded, meaning you can just wait five minutes and run the same search again to make sure you get all documents from a target company.
+
 ## File Naming
 
 dumpany uses the Company House API to fetch metadata for each document, and then names the documents accordingly:
@@ -24,9 +27,8 @@ For example:
 2024-03-15_ACME_LIMITED_annual_accounts.pdf
 2024-02-01_ACME_LIMITED_confirmation_statement.pdf
 
-
 **Note:**
-Older documents use a legacy file naming system at Companies House. dumpany will use an alternative bit of the metadata to handle these files but, due to the way Companies House data was previously organised, you may see some weird file names.
+Older documents use a legacy file naming system at Companies House. dumpany will use an alternative bit of the metadata to handle these files but, due to the way Companies House data was previously organised, you may see some weird file names for old documents.
 
 ## Setup
 
@@ -64,7 +66,7 @@ Older documents use a legacy file naming system at Companies House. dumpany will
    pip install -r requirements.txt
    ```
 
-5. Create a `.env` file with your API key and place this in your dumpany directory:
+5. Use a basic text editor to create a `.env` file with your API key and place this in your dumpany directory. You can also change the `DUMP_DIR` variable to wherever you want the documents saved:
    ```
    API_KEY=your_api_key_here
    DUMP_DIR=dump
@@ -75,12 +77,7 @@ Older documents use a legacy file naming system at Companies House. dumpany will
 1. Python 3.8 or higher
 2. Companies House API key
 3. The required Python packages (installed via requirements.txt)
-
-## Environment Variables
-
-Create a `.env` file with:
-- `API_KEY`: Your Companies House API key (from the setup steps above)
-- `DUMP_DIR`: Where you want the documents saved (defaults to 'dump')
+4. Some basic familiarity with the command line
 
 ## Usage
 
@@ -89,5 +86,6 @@ Create a `.env` file with:
    ```bash
    python dumpany.py
    ```
-3. Enter the company number when prompted
+3. Enter the company number when prompted, or a list of company numbers separated by commas
+4. Hit 'y' to confirm
 4. Documents will be downloaded to the dump directory
