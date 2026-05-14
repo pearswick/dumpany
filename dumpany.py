@@ -8,7 +8,6 @@ import time
 import argparse
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
-from rich import print as rprint
 
 # Initialize Rich console
 console = Console()
@@ -18,7 +17,6 @@ load_dotenv()
 
 # Base URLs and endpoints
 BASE_API_URL = "https://api.companieshouse.gov.uk/"
-DOCUMENT_API_URL = "https://document-api.company-information.service.gov.uk/"
 
 # Get environment variables
 API_KEY = os.getenv('API_KEY')
@@ -89,7 +87,7 @@ def get_current_rate():
 
 def get_company_details(company_number, debug=False):
     url = f"{BASE_API_URL}company/{company_number}"
-    with httpx.Client() as client:
+    with httpx.Client(verify=False) as client:
         count_request()
         if debug:
             request = client.build_request("GET", url, headers=headers)
@@ -112,12 +110,19 @@ def get_company_details(company_number, debug=False):
 def get_filing_history(company_number):
     filings = []
     page = 1
-    with httpx.Client() as client:
+    with httpx.Client(verify=False) as client:
         while True:
             count_request()
             url = f"{BASE_API_URL}company/{company_number}/filing-history"
             params = {'items_per_page': 100, 'start_index': (page - 1) * 100}
             response = client.get(url, headers=headers, params=params)
+
+            if response.status_code == 429:
+                retry_after = int(response.headers.get('Retry-After', 300))
+                console.print(f"[yellow]Rate limited fetching filing history. Waiting {retry_after} seconds...[/]")
+                time.sleep(retry_after)
+                continue
+
             response.raise_for_status()
             data = response.json()
             filings.extend(data.get('items', []))
@@ -150,7 +155,7 @@ def download_single_pdf(args):
 
             rate_limiter.wait_if_needed()
 
-            with httpx.Client() as client:
+            with httpx.Client(verify=False) as client:
                 response = client.get(document_url, auth=(API_KEY, ''), headers={'Accept': 'application/pdf'}, follow_redirects=False)
 
                 if response.status_code == 429:
@@ -182,8 +187,9 @@ def download_single_pdf(args):
     return False
 
 
-def dumpany(company_number, debug=False):
-    company_details = get_company_details(company_number, debug)
+def dumpany(company_number, company_details=None, debug=False):
+    if company_details is None:
+        company_details = get_company_details(company_number, debug)
     company_name = sanitize_filename(company_details.get('company_name', f'company_{company_number}'))
 
     output_dir = os.path.join(DOCS_DIR, company_name)
@@ -196,6 +202,7 @@ def dumpany(company_number, debug=False):
     console.print(f"[green]Found {len(pdf_filings)} documents for {company_name}")
 
     download_tasks = []
+    skipped = 0
     for filing in pdf_filings:
         metadata_link = filing['links']['document_metadata']
         created_date = filing['date']
@@ -204,14 +211,20 @@ def dumpany(company_number, debug=False):
         save_path = os.path.join(output_dir, filename)
 
         if os.path.exists(save_path):
-            console.print(f"[blue]Skipping existing file: {filename}")
+            skipped += 1
             continue
 
         download_tasks.append((metadata_link, save_path, company_name, description, debug))
 
+    if skipped:
+        console.print(f"[blue]Skipping {skipped} already downloaded file(s)")
+
     if not download_tasks:
         console.print("[green]All documents already downloaded!")
         return
+
+    succeeded = 0
+    failed = 0
 
     with Progress(
         SpinnerColumn(),
@@ -227,14 +240,14 @@ def dumpany(company_number, debug=False):
 
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
             for result in executor.map(download_single_pdf, download_tasks):
+                if result:
+                    succeeded += 1
+                else:
+                    failed += 1
                 progress.update(download_task, advance=1)
 
-    console.print(f"[bold green]✓[/] All available documents for {company_name} saved to {output_dir}")
-
-
-def get_company_name(company_number):
-    company_details = get_company_details(company_number)
-    return company_details.get('company_name', f'company_{company_number}')
+    console.print(f"[bold green]✓[/] {succeeded} document(s) saved to {output_dir}" +
+                  (f" [red]({failed} failed)[/]" if failed else ""))
 
 
 def sanitize_filename(name):
@@ -250,13 +263,13 @@ def sanitize_filename(name):
     while '--' in name:
         name = name.replace('--', '-')
 
-    return name.strip()
+    return name.strip()[:200]
 
 
 def get_document_metadata(metadata_link, debug=False):
     rate_limiter.wait_if_needed()
 
-    with httpx.Client() as client:
+    with httpx.Client(verify=False) as client:
         if debug:
             print(f"\nFetching metadata from: {metadata_link}")
 
@@ -330,8 +343,8 @@ if __name__ == '__main__':
     companies = []
     for number in company_numbers:
         try:
-            name = get_company_name(number)
-            companies.append(f"• {name} ({number})")
+            details = get_company_details(number)
+            companies.append((number, details))
         except Exception as e:
             console.print(f"[red]Error fetching company {number}: {str(e)}[/]")
             continue
@@ -341,17 +354,17 @@ if __name__ == '__main__':
         exit(1)
 
     console.print("\nDumpany will download all available PDFs for these companies:")
-    for company in companies:
-        console.print(f"[blue]{company}[/]")
+    for number, details in companies:
+        console.print(f"[blue]• {details.get('company_name', number)} ({number})[/]")
 
     proceed = console.input("\nProceed? (y/n): ").lower().strip()
     if proceed != 'y':
         console.print("[yellow]Operation cancelled.[/]")
         exit(0)
 
-    for number in company_numbers:
+    for number, details in companies:
         try:
-            dumpany(number, args.debug)
+            dumpany(number, company_details=details, debug=args.debug)
         except Exception as e:
             console.print(f"[red]Error processing company {number}: {str(e)}[/]")
 
